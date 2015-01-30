@@ -1,3 +1,161 @@
-apply plugin: 'java'
 apply plugin: 'idea'
 
+apply plugin: 'groovy'
+apply plugin: 'osgi'
+//apply plugin: 'jdepend'
+apply plugin: 'findbugs'
+apply plugin: 'pmd'
+
+group = 'com.mooregreatsoftware.jpatterns'
+version = '0.1.0'
+
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+afterEvaluate {
+    //noinspection GroovyAssignabilityCheck
+    task sourcesJar(type: Jar, dependsOn: classes) {
+        classifier = 'sources'
+        from sourceSets.main.allSource
+    }
+
+    artifacts {
+        archives sourcesJar
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext.slf4j_version = '1.7.2'
+
+//noinspection GroovyAssignabilityCheck
+dependencies {
+    compile "com.google.code.findbugs:jsr305:1.3.9"
+
+    compile "org.slf4j:jcl-over-slf4j:${slf4j_version}"
+    compile "org.slf4j:jul-to-slf4j:${slf4j_version}"
+    compile "org.slf4j:slf4j-api:${slf4j_version}"
+    compile "ch.qos.logback:logback-classic:1.0.9"
+
+    // Testing libraries
+    testCompile "org.codehaus.groovy:groovy-all:2.3.6"
+    testCompile "org.spockframework:spock-core:0.7-groovy-2.0"
+    testCompile "cglib:cglib:3.1"
+    testCompile "org.objenesis:objenesis:2.1"
+}
+
+afterEvaluate {
+    configurations.all*.exclude group: 'commons-logging'
+}
+
+//noinspection GroovyAssignabilityCheck
+jar {
+    manifest {
+        instruction 'Bundle-Vendor', 'Moore Great Software'
+    }
+}
+
+findbugs.ignoreFailures = true
+
+
+idea.project.ipr.withXml { provider ->
+    provider.node.component.find { it.@name == 'VcsDirectoryMappings' }.mapping.@vcs = 'Git'
+    Node codeStyleNode = provider.node.component.find { it.@name == 'ProjectCodeStyleSettingsManager' } as Node
+    if (codeStyleNode == null) {
+        codeStyleNode = provider.node.appendNode('component', [name: 'ProjectCodeStyleSettingsManager'])
+    }
+    codeStyleNode.replaceNode { node ->
+        component(name: 'ProjectCodeStyleSettingsManager') {
+            option(name: "PER_PROJECT_SETTINGS") {
+                value {
+                    option(name: "OTHER_INDENT_OPTIONS") {
+                        value {
+                            option(name: "INDENT_SIZE", value: "4")
+                            option(name: "CONTINUATION_INDENT_SIZE", value: "4")
+                            option(name: "TAB_SIZE", value: "4")
+                            option(name: "USE_TAB_CHARACTER", value: "false")
+                            option(name: "SMART_TABS", value: "false")
+                            option(name: "LABEL_INDENT_SIZE", value: "0")
+                            option(name: "LABEL_INDENT_ABSOLUTE", value: "false")
+                            option(name: "USE_RELATIVE_INDENTS", value: "false")
+                        }
+                    }
+                    option(name: "CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                    option(name: "NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                    XML {
+                        option(name: "XML_LEGACY_SETTINGS_IMPORTED", value: "true")
+                    }
+
+                    // this is needed in addition to the one below, for import settings
+                    GroovyCodeStyleSettings {
+                        option(name: "CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                        option(name: "NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                    }
+
+                    // oddly, both "JAVA" and "Java" are used...
+                    ['Groovy', 'JAVA', 'Java', 'Scala'].each {
+                        codeStyleSettings(language: it) {
+                            option(name: "CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                            option(name: "NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND", value: "9999")
+                            option(name: "BLANK_LINES_AROUND_METHOD", value: "2")
+                            //option(name: "BLANK_LINES_BEFORE_METHOD_BODY", value: "1")
+                            option(name: "ELSE_ON_NEW_LINE", value: "true")
+                            option(name: "CATCH_ON_NEW_LINE", value: "true")
+                            option(name: "FINALLY_ON_NEW_LINE", value: "true")
+                            option(name: "SPACE_AFTER_TYPE_CAST", value: "false")
+                            option(name: "INDENT_SIZE", value: "2")
+                            option(name: "TAB_SIZE", value: "4")
+
+                            // both this level and 'indentOptions' are used
+                            option(name: "CONTINUATION_INDENT_SIZE", value: "4")
+                            indentOptions {
+                                option(name: "CONTINUATION_INDENT_SIZE", value: "4")
+                            }
+                        }
+                    }
+                }
+            }
+            option(name: "USE_PER_PROJECT_SETTINGS", value: "true")
+        }
+    }
+}
+
+//
+// Add integration testing support
+//
+//noinspection GroovyAssignabilityCheck
+sourceSets {
+    integrationTest {
+        groovy {
+            srcDir 'src/integrationTest/groovy'
+        }
+        compileClasspath += sourceSets.test.runtimeClasspath
+    }
+}
+
+configurations {
+    //noinspection GroovyAssignabilityCheck
+    compile {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
+
+    integrationTestCompile.extendsFrom(runtime)
+}
+
+task integrationTest(type: Test) {
+    testClassesDir = sourceSets.integrationTest.output.classesDir
+    classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
+task integrationTestReport(type: TestReport, dependsOn: integrationTest) {
+    destinationDir = file("$buildDir/reports/integrationTests/")
+    reportOn file("$buildDir/test-results/binary/integrationTest/")
+}
+
+idea.module {
+    testSourceDirs += sourceSets.integrationTest.groovy.srcDirs
+}
+
+check.dependsOn integrationTest
